@@ -83,13 +83,6 @@ cache_element *find_element(char *url){
   return nullptr;
 }
 
-void print_cache(){
-  cache_element *temp=head;
-  while(temp!=nullptr){
-    std::cout<<temp->url<<std::endl;
-    temp=temp->next;
-  }
-}
 
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
                             void *userp) {
@@ -195,7 +188,7 @@ void *handle_connections(void *args) {
   }
   //}
   std::cout << "printing cache" << std::endl;
-  print_cache();
+  
   }}
   close(client_socket);
   return NULL;
