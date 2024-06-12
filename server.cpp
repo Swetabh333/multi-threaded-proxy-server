@@ -23,46 +23,71 @@ using namespace httpparser;
 
 pthread_mutex_t lock;
 
-struct cache_element {
+struct cache_element
+{
+  /* data */
   char *url;
   char *response;
+  size_t reslen;
   cache_element *next;
 };
 
-cache_element *head = NULL;
+cache_element *head=nullptr;
 
-void add_element(char *url, char *response) {
-  std::cout << "Inside add_element" << std::endl;
-  cache_element *new_element = new cache_element;
-  new_element->url = url;
-  new_element->response = response;
-
-  if (head == NULL)
-    head = new_element;
-  else {
-    new_element->next = head;
-    head = new_element;
+void add_cache(char *url,char *response){
+  pthread_mutex_lock(&lock);
+  std::cout << url << std::endl;
+  cache_element *element = new cache_element;
+  element->url = strdup(url);
+  std::cout << element->url;
+  element->reslen = strlen(response);
+  element->response = strdup(response);
+  element->next = nullptr;
+  if(head==nullptr){
+    head = element;
+    std::cout << "head created" << std::endl;
+  }else{
+    element->next = head;
+    head=element;
+    std::cout << "head updated" << std::endl;
   }
+  std::cout << head->url << std::endl;
+  pthread_mutex_unlock(&lock);
 }
 
-cache_element *find_element(char *url) {
-  std::cout << "inside find element" << std::endl;
-  cache_element *temp = head;
-  while (temp != NULL) {
-    std::cout << temp->url << std::endl;
-    if (strcmp(temp->url, url) == 0) {
+cache_element *find_element(char *url){
+  
+  if(head==nullptr){
+    return nullptr;
+  }
+
+  if(strcmp(url,head->url)==0){
+    return head;
+  }
+  cache_element *prev=head;
+  cache_element *temp=head->next;
+  while(temp!=nullptr){
+    if(strcmp(url,temp->url)==0){
+      cache_element *elem = new cache_element;
+      elem->url = strdup(temp->url);
+      elem->response = strdup(temp->response);
+      elem->reslen = temp->reslen;
+      elem->next = head;
+      head = elem;
+      prev->next= temp->next;
       return temp;
     }
-    temp = temp->next;
+    prev=temp;
+    temp=temp->next;
   }
-  return NULL;
+  return nullptr;
 }
 
-void print_element() {
-  cache_element *temp = head;
-  while (temp != NULL) {
-    std::cout << temp->url << std::endl;
-    temp = temp->next;
+void print_cache(){
+  cache_element *temp=head;
+  while(temp!=nullptr){
+    std::cout<<temp->url<<std::endl;
+    temp=temp->next;
   }
 }
 
@@ -97,6 +122,7 @@ std::string get_data_from_remote_server(std::string url) {
     std::cout << "Error receiving data from remote server" << std::endl;
     return "";
   }
+   curl_easy_cleanup(curl);
   return header_buffer + read_buffer;
 }
 
@@ -120,8 +146,7 @@ void *handle_connections(void *args) {
     len = len + sizeof(buffer) - 8;
     bytes_received +=
         recv(client_socket, buffer + len, BUFFER_SIZE - 1 - len, 0);
-    // std::cout << "bytes received " << bytes_received << std::end<<
-    // std::string(buffer) << std::endl;
+
     if (strstr(buffer, "\r\n\r\n") != NULL) {
       break;
     }
@@ -143,35 +168,35 @@ void *handle_connections(void *args) {
   std::cout << "req method " << req.method << " req.uri " << req.uri << " url "
             << url << std::endl;
 
-  if (HTTP_version_check(req.versionMajor, req.versionMinor) == 0) {
+  if(req.uri!="/favicon.ico")
+  {if (HTTP_version_check(req.versionMajor, req.versionMinor) == 0) {
     std::cerr << "HTTP version not supported" << std::endl;
     return NULL;
   }
-  std::cout << "just before find" << std::endl;
-  // cache_element *check = find_element((char *)url.c_str());
-  // std::cout << "just after find" << std::endl;
-  // if (check != NULL) {
-  //  std::cout << "Cache hit" << std::endl;
-  //  if (send(client_socket, check->response, strlen(check->response), 0) < 0)
-  //  {
-  //    std::cerr << "Error sending response to client" << std::endl;
-  //  }
-  //} else {
-  std::string response = get_data_from_remote_server(url);
+ 
+  cache_element *check = find_element((char *)url.c_str());
+  if(check!=nullptr){
+    std::cout << "cache hit"<<std::endl;
+    if (send(client_socket, check->response, check->reslen, 0) < 0) {
+    std::cerr << "Error sending response to client" << std::endl;
+    // close(client_socket);
+  }
+  }
+  else{
+    std::string response = get_data_from_remote_server(url);
   if (response == "") {
     std::cerr << "No response received" << std::endl;
     return NULL;
   }
-
-  add_element((char *)url.c_str(), (char *)response.c_str());
-  if (head != NULL)
-    std::cout << " element added" << std::endl;
+  add_cache((char *)url.c_str(),(char *)response.c_str());
   if (send(client_socket, response.c_str(), response.size(), 0) < 0) {
     std::cerr << "Error sending response to client" << std::endl;
     // close(client_socket);
   }
   //}
-  print_element();
+  std::cout << "printing cache" << std::endl;
+  print_cache();
+  }}
   close(client_socket);
   return NULL;
 }
