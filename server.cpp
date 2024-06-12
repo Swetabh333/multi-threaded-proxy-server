@@ -135,7 +135,7 @@ void *handle_connections(void *args) {
   memset(buffer, 0, BUFFER_SIZE);
   int i = 0;
   while (1) {
-    std::cout << "loop runs " << ++i << " times" << std::endl;
+    
     len = len + sizeof(buffer) - 8;
     bytes_received +=
         recv(client_socket, buffer + len, BUFFER_SIZE - 1 - len, 0);
@@ -187,7 +187,7 @@ void *handle_connections(void *args) {
     // close(client_socket);
   }
   //}
-  std::cout << "printing cache" << std::endl;
+  
   
   }}
   close(client_socket);
