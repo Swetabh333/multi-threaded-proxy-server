@@ -21,58 +21,50 @@ using namespace httpparser;
 #define MAX_CLIENTS 20
 #define CACHE_SIZE 50
 
-class cache_element {
-  std::string url;
-  std::string response;
-  size_t reslen;
-  cache_element *next;
+pthread_mutex_t lock;
 
-public:
-  cache_element(std::string url, std::string response);
-  void add_element(std::string url, std::string response, cache_element *&head);
-  std::string find_element(std::string url, cache_element *&head);
+struct cache_element {
+  char *url;
+  char *response;
+  cache_element *next;
 };
 
-cache_element::cache_element(std::string url, std::string response) {
-  this->url = url;
-  this->response = response;
-  this->next = NULL;
-  this->reslen = response.size();
-}
+cache_element *head = NULL;
 
-void cache_element::add_element(std::string url, std::string response,
-                                cache_element *&head) {
-  cache_element *new_element = new cache_element(url, response);
-  if (head == NULL) {
+void add_element(char *url, char *response) {
+  std::cout << "Inside add_element" << std::endl;
+  cache_element *new_element = new cache_element;
+  new_element->url = url;
+  new_element->response = response;
+
+  if (head == NULL)
     head = new_element;
-  } else {
+  else {
     new_element->next = head;
     head = new_element;
   }
 }
 
-std::string cache_element::find_element(std::string url, cache_element *&head) {
-  cache_element *temp = head->next;
-  cache_element *prev = head;
-  std::string response = "Not found";
+cache_element *find_element(char *url) {
+  std::cout << "inside find element" << std::endl;
+  cache_element *temp = head;
   while (temp != NULL) {
-    if (temp->url == url) {
-      response = temp->response;
-      prev->next = temp->next;
+    std::cout << temp->url << std::endl;
+    if (strcmp(temp->url, url) == 0) {
+      return temp;
     }
-    prev = prev->next;
     temp = temp->next;
   }
-  if (response != "Not found") {
-    cache_element *new_elem = new cache_element(url, response);
-    new_elem->next = head;
-    head = new_elem;
-    delete new_elem;
-  }
-  return response;
+  return NULL;
 }
 
-cache_element *head = NULL;
+void print_element() {
+  cache_element *temp = head;
+  while (temp != NULL) {
+    std::cout << temp->url << std::endl;
+    temp = temp->next;
+  }
+}
 
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
                             void *userp) {
@@ -82,9 +74,7 @@ static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
 
 static size_t HeaderCallback(void *contents, size_t size, size_t nmemb,
                              void *userp) {
-  // Append the received header to the string passed via userp
   ((std::string *)userp)->append((char *)contents, size * nmemb);
-  // Return the number of bytes processed
   return size * nmemb;
 }
 
@@ -120,6 +110,7 @@ int HTTP_version_check(int a, int b) {
 void *handle_connections(void *args) {
 
   int client_socket = *((int *)args);
+
   char *buffer = new char[BUFFER_SIZE];
   int len = 0, bytes_received;
   memset(buffer, 0, BUFFER_SIZE);
@@ -129,7 +120,8 @@ void *handle_connections(void *args) {
     len = len + sizeof(buffer) - 8;
     bytes_received +=
         recv(client_socket, buffer + len, BUFFER_SIZE - 1 - len, 0);
-    std::cout << "bytes received " << bytes_received << std::endl;
+    // std::cout << "bytes received " << bytes_received << std::end<<
+    // std::string(buffer) << std::endl;
     if (strstr(buffer, "\r\n\r\n") != NULL) {
       break;
     }
@@ -148,22 +140,39 @@ void *handle_connections(void *args) {
     std::cerr << "Parsing failed" << std::endl;
   }
   std::string url = req.uri.substr(9);
-  std::cout << "req method " << req.method << " req.uri " << url << std::endl;
+  std::cout << "req method " << req.method << " req.uri " << req.uri << " url "
+            << url << std::endl;
 
   if (HTTP_version_check(req.versionMajor, req.versionMinor) == 0) {
     std::cerr << "HTTP version not supported" << std::endl;
     return NULL;
   }
+  std::cout << "just before find" << std::endl;
+  // cache_element *check = find_element((char *)url.c_str());
+  // std::cout << "just after find" << std::endl;
+  // if (check != NULL) {
+  //  std::cout << "Cache hit" << std::endl;
+  //  if (send(client_socket, check->response, strlen(check->response), 0) < 0)
+  //  {
+  //    std::cerr << "Error sending response to client" << std::endl;
+  //  }
+  //} else {
   std::string response = get_data_from_remote_server(url);
   if (response == "") {
     std::cerr << "No response received" << std::endl;
+    return NULL;
   }
-  std::cout << response << std::endl;
+
+  add_element((char *)url.c_str(), (char *)response.c_str());
+  if (head != NULL)
+    std::cout << " element added" << std::endl;
   if (send(client_socket, response.c_str(), response.size(), 0) < 0) {
     std::cerr << "Error sending response to client" << std::endl;
     // close(client_socket);
   }
-  // close(client_socket);
+  //}
+  print_element();
+  close(client_socket);
   return NULL;
 }
 
